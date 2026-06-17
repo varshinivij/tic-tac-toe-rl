@@ -1,21 +1,68 @@
 # Tic Tac Toe RL
 
-A full-stack Tic Tac Toe game enhanced with reinforcement learning.
-Tech Stack: React | FastAPI | PyTorch | TensorFlow
+A full-stack Tic Tac Toe game where the AI is powered by reinforcement learning.
 
-Features:
+**Tech Stack:** React · FastAPI · PyTorch
 
-○ AI opponents powered by reinforcement learning, adapting to your play style.
+## Features
 
-○ Implements multiple RL algorithms:
+- **Two difficulty modes:**
+  - **Easy** — Tabular Q-Learning: a classic table-based RL algorithm that learns state→action Q-values over thousands of self-play games
+  - **Hard** — Deep Q-Network (DQN): a neural network (9 → 12 → 9) trained with the Bellman equation and ε-greedy exploration, achieving ~92% win rate vs a random opponent
 
-  1. Q-Learning – classic table-based learning
-  2. Deep Q-Networks (DQN) – neural network approach for complex strategies
-  3. Monte Carlo Tree Search (MCTS) – probabilistic planning for optimal moves
+- Play as **X** or **O** — the AI always takes the other mark
 
-○ Dynamic difficulty scaling: easy → medium → hard based on AI algorithm choice. 
+- Win/draw detection with animated highlights, board glow, and confetti on victory
+
+## How it works
+
+```
+Frontend (React)  ──POST /new, /move──▶  Backend (FastAPI)
+                                               │
+                              ┌────────────────┴────────────────┐
+                              │ Easy: TicTacToeGame              │
+                              │  Q-table (15k state-action pairs)│
+                              │                                  │
+                              │ Hard: BasicNN (PyTorch)          │
+                              │  weights trained via DQN         │
+                              └──────────────────────────────────┘
+```
+
+### RL Algorithms
+
+**Q-Learning (Easy)**
+- State: 9-cell board encoded as a string
+- Action: cell index 0–8
+- Update rule: `Q(s,a) ← Q(s,a) + α · (r − Q(s,a))`
+- Greedy inference: `argmax_a Q(s, a)`
+
+**Deep Q-Network (Hard)**
+- Network: `Linear(9→12, ReLU) → Linear(12→9)`
+- Illegal moves masked to −∞ before argmax
+- Bellman target: `r + γ · max_a Q(s', a)`
+- Loss: MSE between predicted and target Q-value
+- Trained with ε-greedy decay (ε: 1.0 → 0.05 over 30k episodes)
+
+## Running locally
+
+```bash
+# 1. Backend
+cd backend
+pip install -r requirements.txt
+uvicorn app:app --reload
+
+# 2. Frontend (separate terminal)
+cd frontend
+npm install
+npm start
+```
+
+App runs at `http://localhost:3000`, API at `http://localhost:8000`.
+
+To retrain the agents:
+```bash
+cd backend
+python train_agents.py
+```
 
 <img width="1225" height="828" alt="image" src="https://github.com/user-attachments/assets/a4b1eb58-c684-4d52-98de-50d782b53275" />
-
-
-
