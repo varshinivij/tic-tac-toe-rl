@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./styles.css";
 
-const API = "http://localhost:8000";
+const API = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
 async function apiNewGame(playerMark, difficulty) {
   const res = await fetch(`${API}/new`, {
