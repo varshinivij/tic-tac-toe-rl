@@ -31,24 +31,25 @@ from rl_agents.q_learning import Board
 class BasicNN(nn.Module):
     def __init__(self):
         super().__init__()
-        # input: 9 (board) -> hidden: 12 -> output: 9 (Q-values per move)
-        self.fc1 = nn.Linear(9, 12)  
-        self.fc2 = nn.Linear(12, 9)  
+        # input: 9 (board) -> hidden: 128 -> hidden: 64 -> output: 9 (Q-values per move)
+        self.fc1 = nn.Linear(9, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 9)
 
     # mask illegal moves by setting Q-values to -inf
     def mask(self, tensor, board:Board):
-        tensor = tensor.clone()  # avoid modifying original tensor
+        tensor = tensor.clone()
         for i in range(9):
             if not board.is_valid_move(i):
                 tensor[0, i] = -float('inf')
         return tensor
 
     def forward(self, board:Board):
-        state_tensor = torch.tensor(board.board, dtype=torch.float).unsqueeze(0)  # shape [1,9]
-        x = torch.relu(self.fc1(state_tensor))
-        x = self.fc2(x)
-        x = self.mask(x, board)  
-        return x  
+        x = torch.tensor(board.board, dtype=torch.float).unsqueeze(0)  # shape [1,9]
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = self.fc3(x)
+        return self.mask(x, board)
 
 
 # -------------------------------

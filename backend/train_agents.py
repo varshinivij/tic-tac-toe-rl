@@ -1,6 +1,9 @@
 """
 Train Q-learning (easy) and DQN (hard) agents, then save artifacts.
 Run from the backend/ directory:  python train_agents.py
+
+DQN uses self-play: the network plays both sides with a perspective flip
+so it must learn both attack AND defence.
 """
 
 import sys, os, json, random
@@ -12,12 +15,11 @@ import torch
 import torch.nn as nn
 
 GAMMA = 0.9
-QL_EPISODES  = 30_000
-DQN_EPISODES = 30_000
 
 # ===========================================================
 # 1. Q-learning (easy mode)
 # ===========================================================
+QL_EPISODES = 30_000
 print(f"Training Q-learning for {QL_EPISODES:,} episodes...", flush=True)
 
 for episode in range(QL_EPISODES):
@@ -40,9 +42,17 @@ with open(qt_path, "w") as f:
 print(f"Q-table saved → {qt_path}  ({len(TicTacToeGame.all_game_history):,} pairs)\n", flush=True)
 
 # ===========================================================
-# 2. DQN (hard mode)  —  DQN=player 1, random opponent=-1
+# 2. DQN – self-play with perspective flip
+#
+# Both players use the SAME network. Before each move the board
+# is multiplied by the current player's sign so the network
+# always sees "I am +1, opponent is -1". This forces it to
+# learn both attack (win fast) and defence (block threats).
+# Final game outcome is propagated back to every move as a
+# Monte-Carlo reward (+1 win / -1 loss / 0 draw).
 # ===========================================================
-print(f"Training DQN for {DQN_EPISODES:,} episodes...", flush=True)
+DQN_EPISODES = 100_000
+print(f"Training DQN (self-play) for {DQN_EPISODES:,} episodes...", flush=True)
 
 model     = BasicNN()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -50,64 +60,66 @@ criterion = nn.MSELoss()
 wins = draws = losses = 0
 
 for episode in range(DQN_EPISODES):
-    epsilon = max(0.05, 1.0 - episode / (DQN_EPISODES * 0.6))
-    board = [0] * 9
+    epsilon = max(0.05, 1.0 - episode / (DQN_EPISODES * 0.65))
+    board   = [0] * 9   # absolute: +1 = first mover, -1 = second mover
+    current = 1         # whose turn it is
+
+    # (board_in_current_perspective, action, absolute_player)
+    move_log: list = []
 
     while True:
-        # ---- DQN turn ----
         moves = [i for i in range(9) if board[i] == 0]
         if not moves:
-            draws += 1; break
+            # Board full, no winner → draw
+            for (bp, a, _) in move_log:
+                loss = criterion(model(bp)[0, a], torch.tensor(0.0))
+                optimizer.zero_grad(); loss.backward(); optimizer.step()
+            draws += 1
+            break
 
-        b_before = Board(board[:])
+        # Flip board so current player always appears as +1
+        persp  = [v * current for v in board]
+        b_persp = Board(persp)
+
         if random.random() < epsilon:
             action = random.choice(moves)
         else:
             with torch.no_grad():
-                action = int(torch.argmax(model(b_before)).item())
+                action = int(torch.argmax(model(b_persp)).item())
 
-        board[action] = 1
-        b_after_dqn = Board(board[:])
+        move_log.append((b_persp, action, current))
+        board[action] = current
 
-        if b_after_dqn.game_over():
-            w = b_after_dqn.winner()
-            r = 1.0 if w == 1 else 0.0
-            loss = criterion(model(b_before)[0, action], torch.tensor(r))
-            optimizer.zero_grad(); loss.backward(); optimizer.step()
-            if w == 1: wins += 1
-            else: draws += 1
+        # Check result on absolute board
+        b_abs = Board(board[:])
+        if b_abs.game_over():
+            abs_winner = b_abs.winner()   # +1, -1, or 0
+
+            for (bp, a, player) in move_log:
+                if abs_winner == 0:
+                    r = 0.0
+                else:
+                    r = 1.0 if player == abs_winner else -1.0
+                loss = criterion(model(bp)[0, a], torch.tensor(r))
+                optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+            if   abs_winner ==  1: wins   += 1
+            elif abs_winner == -1: losses += 1
+            else:                  draws  += 1
             break
 
-        # ---- Opponent turn (random) ----
-        opp_moves = [i for i in range(9) if board[i] == 0]
-        board[random.choice(opp_moves)] = -1
-        b_after_opp = Board(board[:])
+        current = -current
 
-        if b_after_opp.game_over():
-            w = b_after_opp.winner()
-            r = -1.0 if w == -1 else 0.0
-            loss = criterion(model(b_before)[0, action], torch.tensor(r))
-            optimizer.zero_grad(); loss.backward(); optimizer.step()
-            if w == -1: losses += 1
-            else: draws += 1
-            break
-
-        # ---- Bellman TD update (mid-game) ----
-        with torch.no_grad():
-            nq = model(Board(board[:]))
-        t = torch.tensor(GAMMA * nq.max().item())
-        loss = criterion(model(b_before)[0, action], t)
-        optimizer.zero_grad(); loss.backward(); optimizer.step()
-
-    if episode % 10_000 == 0 and episode > 0:
-        total = wins + draws + losses
-        pct_w = 100 * wins / total if total else 0
-        print(f"  ep {episode:>6,}  W={wins} D={draws} L={losses}  win%={pct_w:.1f}", flush=True)
+    if episode % 20_000 == 0 and episode > 0:
+        total  = wins + draws + losses
+        pct_d  = 100 * draws / total if total else 0
+        print(f"  ep {episode:>7,}  W={wins} D={draws} L={losses}  draw%={pct_d:.1f}", flush=True)
         wins = draws = losses = 0
 
 weights_path = os.path.join(os.path.dirname(__file__), "rl_agents", "weights_dql.pt")
 torch.save(model.state_dict(), weights_path)
 total = wins + draws + losses
-print(f"  final  W={wins} D={draws} L={losses} / {total}", flush=True)
+pct_d = 100 * draws / total if total else 0
+print(f"  final  W={wins} D={draws} L={losses}  draw%={pct_d:.1f}", flush=True)
 print(f"DQN weights saved → {weights_path}\n", flush=True)
 print("Training complete.", flush=True)
