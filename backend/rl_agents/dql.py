@@ -23,7 +23,7 @@ import random
 import torch.nn as nn
 import torch.nn.functional as F
 
-from q_learning import Board  
+from rl_agents.q_learning import Board
 
 # -------------------------------
 # Neural Network for Tic-Tac-Toe
@@ -120,16 +120,6 @@ class TicTacToeDQ():
             return random.choice(self.board.valid_moves())
         else:
             q_values = self.model(self.board)
-            return torch.argmax(q_values).item()
+            return int(torch.argmax(q_values).item())
 
-
-game = TicTacToeDQ(BasicNN(), Board())
-for i in range(100):
-    while not game.board.game_over():
-        game.user_move()
-        game.train_step(game.select_move())
-        print(f"The winner is {game.board.winner()}" )
-
-
-    
 

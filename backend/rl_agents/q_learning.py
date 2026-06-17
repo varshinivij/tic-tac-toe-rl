@@ -95,26 +95,38 @@ class TicTacToeGame:
             return 0 #draw or ongoing game 
 
     def make_move(self):
-        if not self.board.valid_moves():  
+        if not self.board.valid_moves():
             return
-        found = False
-        idx = -1
+        state = str(self.board)
+        moves = self.board.valid_moves()
 
-        for (state, move) in self.__class__.all_game_history:
-            if state == str(self.board):
-                idx = move
-                found = True
-                break
+        # Greedy: pick the known action with the highest Q-value for this state
+        known = {m: self.__class__.all_game_history[(state, m)]
+                 for m in moves if (state, m) in self.__class__.all_game_history}
+        found = bool(known)
 
         if random.random() < self.epsilon or not found:
-            idx = random.choice(self.board.valid_moves())  
-            if not found:
-                self.__class__.all_game_history[(str(self.board), idx)] = 0
+            idx = random.choice(moves)
+        else:
+            idx = max(known, key=known.get)
 
-        self.history.append((str(self.board), idx, self.player))
-        self.board.board[idx] = self.player  
+        if (state, idx) not in self.__class__.all_game_history:
+            self.__class__.all_game_history[(state, idx)] = 0
+
+        self.history.append((state, idx, self.player))
+        self.board.board[idx] = self.player
 
     
+    def select_move(self, epsilon: float = 0.0):
+        moves = self.board.valid_moves()
+        if not moves:
+            return None
+        if random.random() < epsilon:
+            return random.choice(moves)
+        state = str(self.board)
+        best_move = max(moves, key=lambda m: self.__class__.all_game_history.get((state, m), 0.0))
+        return best_move
+
     def update_Q(self, winner):
         self_reward = self.reward()
         other_reward = -self_reward
@@ -125,17 +137,6 @@ class TicTacToeGame:
             self.__class__.all_game_history[(state, move)] = \
                 self.__class__.all_game_history[(state, move)] + self.lr * \
                 (reward - self.__class__.all_game_history[(state, move)])
-            
-        sorted_dict = dict(sorted(self.__class__.all_game_history.items(), key=lambda item: item[1], reverse=True))
 
-# -------------------------
-# Training loop example
-# -------------------------
-for i in range(5):
-    game = TicTacToeGame(Board(), epsilon=0.1)
-    while not game.board.game_over(): 
-        game.store_user_move()
-        game.make_move()
-    game.update_Q(game.board.winner()) 
-    print(f"The winner is {game.board.winner()}")
+
 
